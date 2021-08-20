@@ -30,7 +30,7 @@ module ActionText
       #
       #  * <tt>:encrypted</tt> - Pass true to encrypt the rich text attribute. The encryption will be non-deterministic. See
       #  +ActiveRecord::Encryption::EncryptableRecord.encrypts+. Default: false.
-      def has_rich_text(name, encrypted: false)
+      def has_rich_text(name, encrypted: false, class_name: nil)
         class_eval <<-CODE, __FILE__, __LINE__ + 1
           def #{name}
             rich_text_#{name} || build_rich_text_#{name}
@@ -45,7 +45,7 @@ module ActionText
           end
         CODE
 
-        rich_text_class_name = encrypted ? "ActionText::EncryptedRichText" : "ActionText::RichText"
+        rich_text_class_name = class_name || (encrypted ? "ActionText::EncryptedRichText" : "ActionText::RichText")
         has_one :"rich_text_#{name}", -> { where(name: name) },
           class_name: rich_text_class_name, as: :record, inverse_of: :record, autosave: true, dependent: :destroy
 
