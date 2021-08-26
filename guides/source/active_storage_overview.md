@@ -876,8 +876,8 @@ specific:
 ```
 
 [`variant`]: https://api.rubyonrails.org/classes/ActiveStorage/Blob/Representable.html#method-i-variant
-[`web images`]: https://github.com/rails/rails/blob/main/activestorage/lib/active_storage/engine.rb#L47
-[`variable`]: https://github.com/rails/rails/blob/main/activestorage/lib/active_storage/engine.rb#L34
+[`web images`]: https://github.com/rails/rails/blob/af7428c4acd0fcf9eed5c7215856594a078f23b7/activestorage/lib/active_storage/engine.rb#L47
+[`variable`]: https://github.com/rails/rails/blob/af7428c4acd0fcf9eed5c7215856594a078f23b7/activestorage/lib/active_storage/engine.rb#L34
 [Vips]: https://www.rubydoc.info/gems/ruby-vips/Vips/Image
 
 ### Previewing Files
