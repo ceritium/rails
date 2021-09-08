@@ -85,18 +85,14 @@ module ApplicationTests
         image_submit_tag:       %r{<input type="image" src="/images/#{contents}" />}
       }
 
+      app "development"
+      class ::PostsController < ActionController::Base; end
+
       cases.each do |(view_method, tag_match)|
         app_file "app/views/posts/#{view_method}.html.erb", "<%= #{view_method} '#{contents}', skip_pipeline: true %>"
+        ::PostsController.define_method(:index) { render view_method }
 
-        app "development"
-
-        class ::PostsController < ActionController::Base
-          def index
-            render params[:view_method]
-          end
-        end
-
-        get "/posts?debug_assets=true&view_method=#{view_method}"
+        get "/posts?debug_assets=true"
 
         body = last_response.body
         assert_match(tag_match, body, "Expected `#{view_method}` to produce a match to #{tag_match}, but did not: #{body}")
@@ -115,18 +111,14 @@ module ApplicationTests
         stylesheet_url:  %r{http://example.org/stylesheets/#{contents}},
       }
 
+      app "development"
+      class ::PostsController < ActionController::Base; end
+
       cases.each do |(view_method, tag_match)|
         app_file "app/views/posts/#{view_method}.html.erb", "<%= #{view_method} '#{contents}', skip_pipeline: true %> "
+        ::PostsController.define_method(:index) { render view_method }
 
-        app "development"
-
-        class ::PostsController < ActionController::Base
-          def index
-            render params[:view_method]
-          end
-        end
-
-        get "/posts?debug_assets=true&view_method=#{view_method}"
+        get "/posts?debug_assets=true"
 
         body = last_response.body
         assert_match(tag_match, body, "Expected `#{view_method}` to produce a match to #{tag_match}, but did not: #{body}")
@@ -138,18 +130,15 @@ module ApplicationTests
         /\/assets\/application-.*.\.js/ => {},
         /application.js/                => { skip_pipeline: true },
       }
+
+      app "development"
+      class ::PostsController < ActionController::Base; end
+
       cases.each_with_index do |(tag_match, options_hash), index|
         app_file "app/views/posts/version_#{index}.html.erb", "<%= asset_path('application.js', #{options_hash}) %>"
+        ::PostsController.define_method(:index) { render "version_#{index}" }
 
-        app "development"
-
-        class ::PostsController < ActionController::Base
-          def index
-            render params[:version]
-          end
-        end
-
-        get "/posts?debug_assets=true&version=version_#{index}"
+        get "/posts?debug_assets=true"
 
         body = last_response.body.strip
         assert_match(tag_match, body, "Expected `asset_path` with `#{options_hash}` to produce a match to #{tag_match}, but did not: #{body}")
@@ -162,18 +151,14 @@ module ApplicationTests
         public_compute_asset_path: /application.js/,
       }
 
+      app "development"
+      class ::PostsController < ActionController::Base; end
+
       cases.each do |(view_method, tag_match)|
         app_file "app/views/posts/#{view_method}.html.erb", "<%= #{ view_method } 'application.js' %>"
+        ::PostsController.define_method(:index) { render view_method }
 
-        app "development"
-
-        class ::PostsController < ActionController::Base
-          def index
-            render params[:view_method]
-          end
-        end
-
-        get "/posts?debug_assets=true&view_method=#{view_method}"
+        get "/posts?debug_assets=true"
 
         body = last_response.body.strip
         assert_match(tag_match, body, "Expected `#{view_method}` to produce a match to #{ tag_match }, but did not: #{ body }")
