@@ -10,6 +10,7 @@ module ApplicationTests
 
     def setup
       build_app(initializers: true)
+      add_to_env_config "development", "config.action_view.cache_template_loading = false"
 
       app_file "app/assets/javascripts/application.js", "//= require_tree ."
       app_file "app/assets/javascripts/xmlhr.js", "function f1() { alert(); }"
@@ -30,6 +31,7 @@ module ApplicationTests
         class PostsController < ActionController::Base
         end
       RUBY
+
 
       ENV["RAILS_ENV"] = "production"
     end
