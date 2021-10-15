@@ -794,6 +794,7 @@ class ActiveStorage::ManyAttachedTest < ActiveSupport::TestCase
         @user.update! highlights: [create_blob(filename: "whenever.jpg")]
       end
     end
+  end
 
   test "attaching a new blob from a Hash with custom storage key" do
     @user.photos.attach(
