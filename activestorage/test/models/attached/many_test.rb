@@ -838,7 +838,7 @@ class ActiveStorage::ManyAttachedTest < ActiveSupport::TestCase
         has_many_attached :featured_photos, key: "some/:unconfigured/interpolation/key"
       end
     end
-    assert_match(/Cannot configure :unconfigured in interpolation key 'some\/:unconfigured\/interpolation\/key' for User#featured_photos/, error.message)
+    assert_match(/Cannot configure unconfigured in interpolation key 'some\/:unconfigured\/interpolation\/key' for User#featured_photos/, error.message)
   end
 
   private

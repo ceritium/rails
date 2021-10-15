@@ -722,6 +722,6 @@ class ActiveStorage::OneAttachedTest < ActiveSupport::TestCase
       end
     end
 
-    assert_match(/Cannot configure :unconfigured in interpolation key 'some\/:unconfigured\/interpolation\/key' for User#featured_photo/, error.message)
+    assert_match(/Cannot configure unconfigured in interpolation key 'some\/:unconfigured\/interpolation\/key' for User#featured_photo/, error.message)
   end
 end
