@@ -133,6 +133,36 @@ class BelongsToAssociationsTest < ActiveRecord::TestCase
     assert_not_predicate model2, :valid?
   end
 
+  def test_null_class_relation
+    null_company_class = Class.new
+    model = Class.new(ActiveRecord::Base) do
+      self.table_name = "accounts"
+      def self.name; "Temp"; end
+      belongs_to :company, null_class: null_company_class, optional: true
+    end
+
+    account = model.new
+    assert_predicate account, :valid?
+    assert_kind_of null_company_class, account.company
+  end
+
+  def test_reloading_null_class_relation
+    null_company_class = Class.new
+    model = Class.new(ActiveRecord::Base) do
+      self.table_name = "accounts"
+      def self.name; "Temp"; end
+      belongs_to :company, null_class: null_company_class, optional: true
+    end
+
+    account = model.new
+    assert_predicate account, :valid?
+    assert_kind_of null_company_class, account.reload_company
+  end
+
+  # TODO:
+  # - try caching the same object
+  # - check after modify
+
   def test_optional_relation
     original_value = ActiveRecord::Base.belongs_to_required_by_default
     ActiveRecord::Base.belongs_to_required_by_default = true

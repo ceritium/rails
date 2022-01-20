@@ -38,11 +38,8 @@ module ActiveRecord
         end
 
         def find_target
-          if disable_joins
-            scope.first
-          else
-            super.first
-          end
+          record = (disable_joins ? scope.first : super.first)
+          record || options[:null_class]&.new
         end
 
         def replace(record)

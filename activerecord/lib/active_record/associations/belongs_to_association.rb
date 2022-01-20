@@ -111,7 +111,7 @@ module ActiveRecord
         end
 
         def find_target?
-          !loaded? && foreign_key_present? && klass
+          (!loaded? && foreign_key_present? && klass) || options[:null_class]
         end
 
         def require_counter_update?

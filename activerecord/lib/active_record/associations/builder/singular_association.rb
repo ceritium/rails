@@ -5,7 +5,7 @@
 module ActiveRecord::Associations::Builder # :nodoc:
   class SingularAssociation < Association # :nodoc:
     def self.valid_options(options)
-      super + [:required, :touch]
+      super + [:required, :touch, :null_class]
     end
 
     def self.define_accessors(model, reflection)
