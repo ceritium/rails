@@ -138,11 +138,10 @@ class BelongsToAssociationsTest < ActiveRecord::TestCase
     model = Class.new(ActiveRecord::Base) do
       self.table_name = "accounts"
       def self.name; "Temp"; end
-      belongs_to :company, null_class: null_company_class, optional: true
+      belongs_to :company, null_class: null_company_class
     end
 
     account = model.new
-    assert_predicate account, :valid?
     assert_kind_of null_company_class, account.company
   end
 
@@ -151,17 +150,88 @@ class BelongsToAssociationsTest < ActiveRecord::TestCase
     model = Class.new(ActiveRecord::Base) do
       self.table_name = "accounts"
       def self.name; "Temp"; end
-      belongs_to :company, null_class: null_company_class, optional: true
+      belongs_to :company, null_class: null_company_class
     end
 
     account = model.new
-    assert_predicate account, :valid?
     assert_kind_of null_company_class, account.reload_company
   end
+
+  def test_save_with_null_class_relation
+    null_company_class = Class.new do
+      def save(**)
+        raise ActiveRecord::RecordInvalid
+      end
+
+      def new_record?
+        true
+      end
+
+      def marked_for_destruction?
+        false
+      end
+
+      def destroyed?
+        false
+      end
+    end
+
+    model = Class.new(ActiveRecord::Base) do
+      self.table_name = "accounts"
+      def self.name; "Temp"; end
+      belongs_to :company, required: true, null_class: null_company_class
+    end
+
+    account = model.new
+    refute_predicate account, :save
+  end
+
+  require 'debug'
+  def test_validation_with_null_class_relation
+    null_company_class = Class.new do
+      def save(**)
+        raise ActiveRecord::RecordInvalid
+      end
+
+      def nil?
+        true
+      end
+      # activemodel/lib/active_model/validator.rb:151
+      #
+      # def valid?
+      #   false
+      # end
+
+      def new_record?
+        true
+      end
+
+      def marked_for_destruction?
+        false
+      end
+
+      def destroyed?
+        # false
+        true
+      end
+    end
+
+    model = Class.new(ActiveRecord::Base) do
+      self.table_name = "accounts"
+      def self.name; "Temp"; end
+      belongs_to :company, required: true, null_class: null_company_class
+    end
+
+    account = model.new
+    refute_predicate account, :valid?
+  end
+
+  # def test_null_class_relation_v
 
   # TODO:
   # - try caching the same object
   # - check after modify
+  # - test when required: true
 
   def test_optional_relation
     original_value = ActiveRecord::Base.belongs_to_required_by_default
