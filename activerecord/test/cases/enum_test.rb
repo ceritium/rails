@@ -1172,4 +1172,47 @@ class EnumTest < ActiveRecord::TestCase
     assert_raises(NoMethodError) { instance.proposed? }
     assert_raises(NoMethodError) { instance.proposed! }
   end
+
+  test "predicate method can be disabled by :instance_methods" do
+    klass = Class.new(ActiveRecord::Base) do
+      self.table_name = "books"
+      enum :status, [:proposed, :written], instance_methods: { predicate: false }
+    end
+
+    instance = klass.new(status: "proposed")
+    assert_raises(NoMethodError) { instance.proposed? }
+    assert_nothing_raised { instance.proposed! }
+  end
+
+  test "bang method can be disabled by :instance_methods" do
+    klass = Class.new(ActiveRecord::Base) do
+      self.table_name = "books"
+      enum :status, [:proposed, :written], instance_methods: { bang: false }
+    end
+
+    instance = klass.new(status: "proposed")
+    assert_nothing_raised { instance.proposed? }
+    assert_raises(NoMethodError) { instance.proposed! }
+  end
+
+  test "omitted :instance_methods hash keys default to enabled" do
+    klass = Class.new(ActiveRecord::Base) do
+      self.table_name = "books"
+      enum :status, [:proposed, :written], instance_methods: { bang: false }
+    end
+
+    instance = klass.new(status: "proposed")
+    assert_equal true, instance.proposed?
+  end
+
+  test "invalid :instance_methods hash key raises" do
+    error = assert_raises(ArgumentError) do
+      Class.new(ActiveRecord::Base) do
+        self.table_name = "books"
+        enum :status, [:proposed, :written], instance_methods: { inquiry: false }
+      end
+    end
+
+    assert_match(/invalid instance_methods option\(s\): :inquiry/, error.message)
+  end
 end

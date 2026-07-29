@@ -118,6 +118,18 @@ module ActiveRecord
   #     enum :status, [ :active, :archived ], instance_methods: false
   #   end
   #
+  # You can also disable only the predicate (<tt>active?</tt>) or bang
+  # (<tt>active!</tt>) methods individually by passing a hash with +:predicate+
+  # and/or +:bang+ set to +false+. Keys that are omitted default to +true+:
+  #
+  #   class Conversation < ActiveRecord::Base
+  #     enum :status, [ :active, :archived ], instance_methods: { bang: false }
+  #   end
+  #
+  #   conversation = Conversation.new
+  #   conversation.active? # => false
+  #   conversation.active! # NoMethodError
+  #
   # By default, an +ArgumentError+ will be raised when assigning an invalid value:
   #
   #   class Conversation < ActiveRecord::Base
@@ -221,7 +233,7 @@ module ActiveRecord
     private
       def _enum(name, values, prefix: nil, suffix: nil, scopes: true, instance_methods: true, validate: false, **options)
         values = assert_valid_enum_definition_values(values)
-        assert_valid_enum_options(options)
+        assert_valid_enum_options(options, instance_methods)
 
         # statuses = { }
         enum_values = ActiveSupport::HashWithIndifferentAccess.new
@@ -300,14 +312,18 @@ module ActiveRecord
           attr_reader :klass
 
           def define_enum_methods(name, value_method_name, value, scopes, instance_methods)
-            if instance_methods
-              # def active?() status_for_database == 0 end
-              klass.send(:detect_enum_conflict!, name, "#{value_method_name}?")
-              define_method("#{value_method_name}?") { public_send(:"#{name}_for_database") == value }
+            if instance_methods.present?
+              if instance_methods == true || instance_methods.fetch(:predicate, true)
+                # def active?() status_for_database == 0 end
+                klass.send(:detect_enum_conflict!, name, "#{value_method_name}?")
+                define_method("#{value_method_name}?") { public_send(:"#{name}_for_database") == value }
+              end
 
-              # def active!() update!(status: 0) end
-              klass.send(:detect_enum_conflict!, name, "#{value_method_name}!")
-              define_method("#{value_method_name}!") { update!(name => value) }
+              if instance_methods == true || instance_methods.fetch(:bang, true)
+                # def active!() update!(status: 0) end
+                klass.send(:detect_enum_conflict!, name, "#{value_method_name}!")
+                define_method("#{value_method_name}!") { update!(name => value) }
+              end
             end
 
             if scopes
@@ -374,10 +390,17 @@ module ActiveRecord
         values
       end
 
-      def assert_valid_enum_options(options)
+      def assert_valid_enum_options(options, instance_methods)
         invalid_keys = options.keys & %i[_prefix _suffix _scopes _default _instance_methods]
         unless invalid_keys.empty?
           raise ArgumentError, "invalid option(s): #{invalid_keys.map(&:inspect).join(", ")}. Valid options are: :prefix, :suffix, :scopes, :default, :instance_methods, and :validate."
+        end
+
+        if instance_methods.is_a?(Hash)
+          invalid_instance_methods_keys = instance_methods.keys - %i[predicate bang]
+          unless invalid_instance_methods_keys.empty?
+            raise ArgumentError, "invalid instance_methods option(s): #{invalid_instance_methods_keys.map(&:inspect).join(", ")}. Valid options are: :predicate and :bang."
+          end
         end
       end
 
