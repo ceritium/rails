@@ -374,7 +374,7 @@ module ActiveRecord
       # which every batch would otherwise read again.
       def row_value_comparison?(operators)
         return false unless model.with_connection(&:supports_row_value_comparison?)
-      
+
         operators.all? { |operator| operator == :gt || operator == :gteq } ||
           operators.all? { |operator| operator == :lt || operator == :lteq }
       end
