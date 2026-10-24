@@ -350,10 +350,9 @@ module ActiveRecord
       end
 
       def batch_condition(relation, cursor, values, operators)
-        # (a, b) > (x, y) means a > x OR (a = x AND b > y), but only the row value is
-        # a range over an index on (a, b): PostgreSQL and SQLite filter the OR from
-        # the start of the index, so every batch would read again all the rows before
-        # the cursor.
+        # (a, b) > (x, y) and a > x OR (a = x AND b > y) select the same rows, but
+        # PostgreSQL and SQLite start reading an index on (a, b) at (x, y) only for
+        # the first: for the second they read it from the start and filter.
         if cursor.size > 1 && row_value_comparison?(operators)
           return relation.where(row_value_condition(cursor, values, operators.last))
         end
