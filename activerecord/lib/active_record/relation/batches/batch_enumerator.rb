@@ -6,7 +6,7 @@ module ActiveRecord
     class BatchEnumerator
       include Enumerable
 
-      def initialize(of: 1000, start: nil, finish: nil, relation:, cursor:, order: :asc, use_ranges: nil) # :nodoc:
+      def initialize(of: 1000, start: nil, finish: nil, relation:, cursor:, order: :asc, use_ranges: nil, row_value_comparison: nil) # :nodoc:
         @of       = of
         @relation = relation
         @start = start
@@ -14,6 +14,7 @@ module ActiveRecord
         @cursor = cursor
         @order = order
         @use_ranges = use_ranges
+        @row_value_comparison = row_value_comparison
       end
 
       # The cursor column value from which the BatchEnumerator starts, inclusive of the value.
@@ -33,6 +34,10 @@ module ActiveRecord
 
       # Specifies whether to use range iteration (id >= x AND id <= y).
       attr_reader :use_ranges
+
+      # Specifies whether batches over several cursor columns compare row values,
+      # <tt>(a, b) > (x, y)</tt>: +nil+ lets the adapter decide.
+      attr_reader :row_value_comparison
 
       # The size of the batches yielded by the BatchEnumerator.
       def batch_size
@@ -67,7 +72,7 @@ module ActiveRecord
       def each_record(&block)
         return to_enum(:each_record) unless block_given?
 
-        @relation.to_enum(:in_batches, of: @of, start: @start, finish: @finish, load: true, cursor: @cursor, order: @order).each do |relation|
+        @relation.to_enum(:in_batches, of: @of, start: @start, finish: @finish, load: true, cursor: @cursor, order: @order, row_value_comparison: @row_value_comparison).each do |relation|
           relation.records.each(&block)
         end
       end
@@ -130,7 +135,7 @@ module ActiveRecord
       # end
       # ```
       def each(&block)
-        enum = @relation.to_enum(:in_batches, of: @of, start: @start, finish: @finish, load: false, cursor: @cursor, order: @order, use_ranges: @use_ranges)
+        enum = @relation.to_enum(:in_batches, of: @of, start: @start, finish: @finish, load: false, cursor: @cursor, order: @order, use_ranges: @use_ranges, row_value_comparison: @row_value_comparison)
         return enum.each(&block) if block_given?
         enum
       end

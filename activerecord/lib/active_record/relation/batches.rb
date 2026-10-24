@@ -54,6 +54,13 @@ module ActiveRecord
     #
     #   In the above code, +id_1+ is sorted in ascending order and +id_2+ in descending order.
     #
+    # * <tt>:row_value_comparison</tt> - Specifies whether batches over several cursor columns ask for the
+    #   next batch with a row value comparison, <tt>(a, b) > (x, y)</tt>, instead of
+    #   <tt>a > x OR (a = x AND b > y)</tt>. By default the adapter decides: PostgreSQL and SQLite
+    #   use it, since they can read an index on <tt>(a, b)</tt> from <tt>(x, y)</tt> with it and not
+    #   with the other. Pass +false+ to compare column by column, or +true+ to use it on another
+    #   database. It needs every cursor column in the same order.
+    #
     # Limits are honored, and if present there is no requirement for the batch
     # size: it can be less than, equal to, or greater than the limit.
     #
@@ -84,16 +91,16 @@ module ActiveRecord
     #
     # NOTE: By its nature, batch processing is subject to race conditions if
     # other processes are modifying the database.
-    def find_each(start: nil, finish: nil, batch_size: 1000, error_on_ignore: nil, cursor: primary_key, order: DEFAULT_ORDER, &block)
+    def find_each(start: nil, finish: nil, batch_size: 1000, error_on_ignore: nil, cursor: primary_key, order: DEFAULT_ORDER, row_value_comparison: nil, &block)
       if block_given?
-        find_in_batches(start: start, finish: finish, batch_size: batch_size, error_on_ignore: error_on_ignore, cursor: cursor, order: order) do |records|
+        find_in_batches(start: start, finish: finish, batch_size: batch_size, error_on_ignore: error_on_ignore, cursor: cursor, order: order, row_value_comparison: row_value_comparison) do |records|
           records.each(&block)
         end
       else
-        enum_for(:find_each, start: start, finish: finish, batch_size: batch_size, error_on_ignore: error_on_ignore, cursor: cursor, order: order) do
+        enum_for(:find_each, start: start, finish: finish, batch_size: batch_size, error_on_ignore: error_on_ignore, cursor: cursor, order: order, row_value_comparison: row_value_comparison) do
           relation = self
           cursor = Array(cursor)
-          apply_limits(relation, cursor, start, finish, build_batch_orders(cursor, order)).size
+          apply_limits(relation, cursor, start, finish, build_batch_orders(cursor, order), row_value_comparison).size
         end
       end
     end
@@ -135,6 +142,13 @@ module ActiveRecord
     #
     #   In the above code, +id_1+ is sorted in ascending order and +id_2+ in descending order.
     #
+    # * <tt>:row_value_comparison</tt> - Specifies whether batches over several cursor columns ask for the
+    #   next batch with a row value comparison, <tt>(a, b) > (x, y)</tt>, instead of
+    #   <tt>a > x OR (a = x AND b > y)</tt>. By default the adapter decides: PostgreSQL and SQLite
+    #   use it, since they can read an index on <tt>(a, b)</tt> from <tt>(x, y)</tt> with it and not
+    #   with the other. Pass +false+ to compare column by column, or +true+ to use it on another
+    #   database. It needs every cursor column in the same order.
+    #
     # Limits are honored, and if present there is no requirement for the batch
     # size: it can be less than, equal to, or greater than the limit.
     #
@@ -160,17 +174,17 @@ module ActiveRecord
     #
     # NOTE: By its nature, batch processing is subject to race conditions if
     # other processes are modifying the database.
-    def find_in_batches(start: nil, finish: nil, batch_size: 1000, error_on_ignore: nil, cursor: primary_key, order: DEFAULT_ORDER)
+    def find_in_batches(start: nil, finish: nil, batch_size: 1000, error_on_ignore: nil, cursor: primary_key, order: DEFAULT_ORDER, row_value_comparison: nil)
       relation = self
       unless block_given?
-        return to_enum(:find_in_batches, start: start, finish: finish, batch_size: batch_size, error_on_ignore: error_on_ignore, cursor: cursor, order: order) do
+        return to_enum(:find_in_batches, start: start, finish: finish, batch_size: batch_size, error_on_ignore: error_on_ignore, cursor: cursor, order: order, row_value_comparison: row_value_comparison) do
           cursor = Array(cursor)
-          total = apply_limits(relation, cursor, start, finish, build_batch_orders(cursor, order)).size
+          total = apply_limits(relation, cursor, start, finish, build_batch_orders(cursor, order), row_value_comparison).size
           (total - 1).div(batch_size) + 1
         end
       end
 
-      in_batches(of: batch_size, start: start, finish: finish, load: true, error_on_ignore: error_on_ignore, cursor: cursor, order: order) do |batch|
+      in_batches(of: batch_size, start: start, finish: finish, load: true, error_on_ignore: error_on_ignore, cursor: cursor, order: order, row_value_comparison: row_value_comparison) do |batch|
         yield batch.to_a
       end
     end
@@ -216,6 +230,13 @@ module ActiveRecord
     #
     #   In the above code, +id_1+ is sorted in ascending order and +id_2+ in descending order.
     #
+    # * <tt>:row_value_comparison</tt> - Specifies whether batches over several cursor columns ask for the
+    #   next batch with a row value comparison, <tt>(a, b) > (x, y)</tt>, instead of
+    #   <tt>a > x OR (a = x AND b > y)</tt>. By default the adapter decides: PostgreSQL and SQLite
+    #   use it, since they can read an index on <tt>(a, b)</tt> from <tt>(x, y)</tt> with it and not
+    #   with the other. Pass +false+ to compare column by column, or +true+ to use it on another
+    #   database. It needs every cursor column in the same order.
+    #
     # * <tt>:use_ranges</tt> - Specifies whether to use range iteration (id >= x AND id <= y).
     #   It can make iterating over the whole or almost whole tables several times faster.
     #   Only whole table iterations use this style of iteration by default. You can disable this behavior by passing +false+.
@@ -258,15 +279,15 @@ module ActiveRecord
     #
     # NOTE: By its nature, batch processing is subject to race conditions if
     # other processes are modifying the database.
-    def in_batches(of: 1000, start: nil, finish: nil, load: false, error_on_ignore: nil, cursor: primary_key, order: DEFAULT_ORDER, use_ranges: nil, &block)
-      ensure_valid_options_for_batching!(cursor, start, finish, order)
+    def in_batches(of: 1000, start: nil, finish: nil, load: false, error_on_ignore: nil, cursor: primary_key, order: DEFAULT_ORDER, use_ranges: nil, row_value_comparison: nil, &block)
+      ensure_valid_options_for_batching!(cursor, start, finish, order, row_value_comparison)
 
       if arel.orders.present?
         act_on_ignored_order(error_on_ignore)
       end
 
       unless block
-        return BatchEnumerator.new(of: of, start: start, finish: finish, relation: self, cursor: cursor, order: order, use_ranges: use_ranges)
+        return BatchEnumerator.new(of: of, start: start, finish: finish, relation: self, cursor: cursor, order: order, use_ranges: use_ranges, row_value_comparison: row_value_comparison)
       end
 
       cursor = Array(cursor).map(&:to_s)
@@ -296,6 +317,7 @@ module ActiveRecord
           cursor: cursor,
           order: order,
           use_ranges: use_ranges,
+          row_value_comparison: row_value_comparison,
           remaining: remaining,
           batch_limit: batch_limit,
           &block
@@ -304,7 +326,7 @@ module ActiveRecord
     end
 
     private
-      def ensure_valid_options_for_batching!(cursor, start, finish, order)
+      def ensure_valid_options_for_batching!(cursor, start, finish, order, row_value_comparison = nil)
         cursor = Array(cursor).map(&:to_s)
 
         if start && Array(start).size != cursor.size
@@ -327,29 +349,44 @@ module ActiveRecord
         if (Array(order) - [:asc, :desc]).any?
           raise ArgumentError, ":order must be :asc or :desc or an array consisting of :asc or :desc, got #{order.inspect}"
         end
+
+        unless [nil, true, false].include?(row_value_comparison)
+          raise ArgumentError, ":row_value_comparison must be true, false or nil, got #{row_value_comparison.inspect}"
+        end
+
+        if row_value_comparison && build_batch_orders(cursor, order).map(&:last).uniq.size > 1
+          raise ArgumentError, ":row_value_comparison needs every cursor column in the same order, got #{order.inspect}"
+        end
       end
 
-      def apply_limits(relation, cursor, start, finish, batch_orders)
-        relation = apply_start_limit(relation, cursor, start, batch_orders) if start
-        relation = apply_finish_limit(relation, cursor, finish, batch_orders) if finish
+      def apply_limits(relation, cursor, start, finish, batch_orders, row_value_comparison = nil)
+        relation = apply_start_limit(relation, cursor, start, batch_orders, row_value_comparison) if start
+        relation = apply_finish_limit(relation, cursor, finish, batch_orders, row_value_comparison) if finish
         relation
       end
 
-      def apply_start_limit(relation, cursor, start, batch_orders)
+      def apply_start_limit(relation, cursor, start, batch_orders, row_value_comparison = nil)
         operators = batch_orders.map do |_column, order|
           order == :desc ? :lteq : :gteq
         end
-        batch_condition(relation, cursor, start, operators)
+        batch_condition(relation, cursor, start, operators, row_value_comparison)
       end
 
-      def apply_finish_limit(relation, cursor, finish, batch_orders)
+      def apply_finish_limit(relation, cursor, finish, batch_orders, row_value_comparison = nil)
         operators = batch_orders.map do |_column, order|
           order == :desc ? :gteq : :lteq
         end
-        batch_condition(relation, cursor, finish, operators)
+        batch_condition(relation, cursor, finish, operators, row_value_comparison)
       end
 
-      def batch_condition(relation, cursor, values, operators)
+      def batch_condition(relation, cursor, values, operators, row_value_comparison = nil)
+        # (a, b) > (x, y) and a > x OR (a = x AND b > y) select the same rows, but
+        # PostgreSQL and SQLite start reading an index on (a, b) at (x, y) only for
+        # the first: for the second they read it from the start and filter.
+        if cursor.size > 1 && row_value_comparison?(operators, row_value_comparison)
+          return relation.where(row_value_condition(cursor, values, operators.last))
+        end
+
         cursor_positions = cursor.zip(Array(values), operators)
 
         first_clause_column, first_clause_value, operator = cursor_positions.pop
@@ -362,6 +399,36 @@ module ActiveRecord
         end
 
         relation.where(where_clause)
+      end
+
+      # Unless asked for with +:row_value_comparison+, the adapter has to
+      # compare row values; and a single comparison needs every column going
+      # the same way.
+      def row_value_comparison?(operators, requested)
+        return false if requested == false
+        return false unless requested || model.with_connection(&:supports_row_value_comparison?)
+
+        operators.all? { |operator| operator.in?([:gt, :gteq]) } ||
+          operators.all? { |operator| operator.in?([:lt, :lteq]) }
+      end
+
+      def row_value_condition(cursor, values, operator)
+        attributes = cursor.map { |column_name| table[column_name] }
+        binds = attributes.zip(Array(values)).map do |attribute, value|
+          predicate_builder.build_bind_attribute(attribute, value)
+        end
+        condition = Arel::Nodes::Grouping.new(attributes).public_send(operator, Arel::Nodes::Grouping.new(binds))
+
+        # Repeating the bound on the first column, a >= x AND (a, b) > (x, y),
+        # lets PostgreSQL 16 and 17 combine the comparison with an IN list on that
+        # column instead of scanning from the list's first value.
+        if model.with_connection(&:row_value_comparison_needs_leading_bound?)
+          leading_operator = operator.in?([:gt, :gteq]) ? :gteq : :lteq
+          leading_bind = predicate_builder.build_bind_attribute(attributes.first, Array(values).first)
+          condition = attributes.first.public_send(leading_operator, leading_bind).and(condition)
+        end
+
+        condition
       end
 
       def build_batch_orders(cursor, order)
@@ -427,10 +494,10 @@ module ActiveRecord
         0
       end
 
-      def batch_on_unloaded_relation(relation:, start:, finish:, load:, cursor:, order:, use_ranges:, remaining:, batch_limit:)
+      def batch_on_unloaded_relation(relation:, start:, finish:, load:, cursor:, order:, use_ranges:, row_value_comparison:, remaining:, batch_limit:)
         batch_orders = build_batch_orders(cursor, order)
         relation = relation.reorder(batch_orders.to_h).limit(batch_limit)
-        relation = apply_limits(relation, cursor, start, finish, batch_orders)
+        relation = apply_limits(relation, cursor, start, finish, batch_orders, row_value_comparison)
         relation.skip_query_cache! # Retaining the results in the query cache would undermine the point of batching
         batch_relation = relation
         empty_scope = to_sql == model.unscoped.all.to_sql
@@ -458,7 +525,7 @@ module ActiveRecord
 
             # Finally, build the yielded relation if at least one value found.
             if values_last
-              yielded_relation = apply_finish_limit(batch_relation, cursor, values_last, batch_orders)
+              yielded_relation = apply_finish_limit(batch_relation, cursor, values_last, batch_orders, row_value_comparison)
               yielded_relation = yielded_relation.except(:limit, :order)
               yielded_relation.skip_query_cache!(false)
             end
@@ -500,7 +567,7 @@ module ActiveRecord
           operators << (last_order == :desc ? :lt : :gt)
 
           cursor_value = values_last
-          batch_relation = batch_condition(relation, cursor, cursor_value, operators)
+          batch_relation = batch_condition(relation, cursor, cursor_value, operators, row_value_comparison)
         end
 
         nil
