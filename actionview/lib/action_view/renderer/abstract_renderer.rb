@@ -47,8 +47,14 @@ module ActionView
           else
             # Deriving the name allocates a basename, a MatchData and a capture,
             # and partials are rendered with the same few paths over and over.
-            ObjectRendering.local_variable_names.compute_if_absent(path) { local_variable_from_path(path) }
+            ObjectRendering.local_variable_names[path] || local_variable_from_path(path)
           end
+        end
+
+        # Keeps the name derived from +path+ once its template has been found,
+        # so that paths with no template, which can be any string, aren't kept.
+        def remember_local_variable(path, name)
+          ObjectRendering.local_variable_names.put_if_absent(path, name) unless @options[:as]
         end
 
         def local_variable_from_path(path)

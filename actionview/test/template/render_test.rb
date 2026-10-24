@@ -475,6 +475,19 @@ module RenderTestCases
     assert_equal "[1, 2, 3]", @view.render(partial: "test/object_inspector", object: [1, 2, 3])
   end
 
+  def test_partial_local_variable_names_are_kept_only_for_partials_that_exist
+    names = ActionView::AbstractRenderer::ObjectRendering.local_variable_names
+
+    assert_raises(ActionView::MissingTemplate) { @view.render(partial: "test/no_such_customer", object: Customer.new("david")) }
+    assert_nil names["test/no_such_customer"]
+
+    assert_raises(ActionView::MissingTemplate) { @view.render(partial: "test/no_such_customer", collection: [Customer.new("david")]) }
+    assert_nil names["test/no_such_customer"]
+
+    assert_equal "Hello: david", @view.render(partial: "test/customer", object: Customer.new("david"))
+    assert_equal :customer, names["test/customer"]
+  end
+
   def test_render_partial_collection
     assert_equal "Hello: davidHello: mary", @view.render(partial: "test/customer", collection: [ Customer.new("david"), Customer.new("mary") ])
   end

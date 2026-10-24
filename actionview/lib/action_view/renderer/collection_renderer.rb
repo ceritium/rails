@@ -119,6 +119,7 @@ module ActionView
       end
 
       template = find_template(partial, @locals.keys + iter_vars)
+      remember_local_variable(partial, iter_vars.first)
 
       layout = if !block && (layout = @options[:layout])
         find_template(layout.to_s, @locals.keys + iter_vars)
@@ -140,7 +141,9 @@ module ActionView
 
         paths.map! { |path| retrieve_variable(path).unshift(path) }
         collection = MixedCollectionIterator.new(collection, paths)
-        render_collection(collection, context, nil, nil, nil, block)
+        render_collection(collection, context, nil, nil, nil, block).tap do
+          paths.each { |path, variable| remember_local_variable(path, variable) }
+        end
       end
     end
 

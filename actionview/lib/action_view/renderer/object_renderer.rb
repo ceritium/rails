@@ -13,7 +13,7 @@ module ActionView
     def render_object_with_partial(object, partial, context, block)
       @object     = object
       @local_name = local_variable(partial)
-      render(partial, context, block)
+      render(partial, context, block).tap { remember_local_variable(partial, @local_name) }
     end
 
     def render_object_derive_partial(object, context, block)
