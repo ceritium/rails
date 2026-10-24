@@ -38,16 +38,26 @@ module ActionView
         @context_prefix = lookup_context.prefixes.first
       end
 
+      def self.local_variable_names # :nodoc:
+        ActiveSupport::Ractors.store_if_absent(:action_view_partial_local_variable_names) { Concurrent::Map.new }
+      end
+
       private
         def local_variable(path)
           if as = @options[:as]
             raise_invalid_option_as(as) unless /\A[a-z_]\w*\z/.match?(as.to_s)
             as.to_sym
           else
-            base = path.end_with?("/") ? "" : File.basename(path)
-            raise_invalid_identifier(path) unless base =~ /\A_?(.*?)(?:\.\w+)*\z/
-            $1.to_sym
+            # Deriving the name allocates a basename, a MatchData and a capture,
+            # and partials are rendered with the same few paths over and over.
+            ObjectRendering.local_variable_names.compute_if_absent(path) { local_variable_from_path(path) }
           end
+        end
+
+        def local_variable_from_path(path)
+          base = path.end_with?("/") ? "" : File.basename(path)
+          raise_invalid_identifier(path) unless base =~ /\A_?(.*?)(?:\.\w+)*\z/
+          $1.to_sym
         end
 
         IDENTIFIER_ERROR_MESSAGE = "The partial name (%s) is not a valid Ruby identifier; " \
