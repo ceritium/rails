@@ -278,68 +278,91 @@ module ActiveRecord
         primary_key = options[:primary_key] || "id"
         role_type = options[:foreign_type] || "#{role}_type"
         role_id   = options[:foreign_key] || "#{role}_id"
-        role_class = :"#{role}_class"
 
         define_singleton_method "#{role}_types" do
           types.map(&:to_s)
         end
 
-        singulars = types.to_h do |type|
-          scope_name = type.tableize.tr("/", "_")
-          scope scope_name, -> { where(role_type => type) }
-          [type, scope_name.singularize]
+        types.each do |type|
+          scope type.tableize.tr("/", "_"), -> { where(role_type => type) }
         end
 
-        method_names = ["#{role}_class", "#{role}_name", "build_#{role}"] +
-          singulars.values.flat_map { |singular| ["#{singular}?", singular, "#{singular}_#{primary_key}"] }
-        called_names = [role, role_type, role_id].map(&:to_s)
-
-        # Methods written as source call the attributes and the association
-        # directly and compare with the type as a literal, which is faster than
-        # public_send in a block, especially with YJIT and ZJIT. Names that can't
-        # be written as source get the block.
-        if method_names.all? { |name| ActiveModel::AttributeMethods::NAME_COMPILABLE_REGEXP.match?(name) } &&
-            called_names.all? { |name| ActiveModel::AttributeMethods::CALL_COMPILABLE_REGEXP.match?(name) }
-          ActiveSupport::CodeGenerator.batch(self, __FILE__, __LINE__) do |code_generator|
-            code_generator.class_eval do |batch|
-              batch << "def #{role}_class; self.#{role_type}.constantize; end"
-              batch << "def #{role}_name; #{role_class}.model_name.singular.inquiry; end"
-              batch << "def build_#{role}(*params); public_send(:#{role}=, #{role_class}.new(*params)); end"
-
-              singulars.each do |type, singular|
-                batch << "def #{singular}?; self.#{role_type} == #{type.inspect}; end"
-                batch << "def #{singular}; self.#{role} if #{singular}?; end"
-                batch << "def #{singular}_#{primary_key}; self.#{role_id} if #{singular}?; end"
-              end
-            end
-          end
+        # Methods written as source are faster than define_method blocks that
+        # call public_send, especially with YJIT and ZJIT. Names that can't be
+        # written as source, like a foreign_type that isn't a method name, get
+        # the blocks.
+        if [role, role_type, role_id, primary_key].all? { |name| ActiveModel::AttributeMethods::CALL_COMPILABLE_REGEXP.match?(name.to_s) }
+          define_delegated_type_methods_as_source(role, types, role_type, role_id, primary_key)
         else
-          define_method "#{role}_class" do
-            public_send(role_type).constantize
+          define_delegated_type_methods_with_blocks(role, types, role_type, role_id, primary_key)
+        end
+      end
+
+      def define_delegated_type_methods_as_source(role, types, role_type, role_id, primary_key)
+        class_eval <<~RUBY, __FILE__, __LINE__ + 1
+          # frozen_string_literal: true
+          def #{role}_class                                # def entryable_class
+            self.#{role_type}.constantize                  #   self.entryable_type.constantize
+          end                                              # end
+
+          def #{role}_name                                 # def entryable_name
+            #{role}_class.model_name.singular.inquiry      #   entryable_class.model_name.singular.inquiry
+          end                                              # end
+
+          def build_#{role}(*params)                       # def build_entryable(*params)
+            self.#{role} = #{role}_class.new(*params)      #   self.entryable = entryable_class.new(*params)
+          end                                              # end
+        RUBY
+
+        types.each do |type|
+          singular = type.tableize.tr("/", "_").singularize
+
+          class_eval <<~RUBY, __FILE__, __LINE__ + 1
+            # frozen_string_literal: true
+            def #{singular}?                               # def message?
+              self.#{role_type} == #{type.inspect}         #   self.entryable_type == "Message"
+            end                                            # end
+
+            def #{singular}                                # def message
+              self.#{role} if #{singular}?                 #   self.entryable if message?
+            end                                            # end
+
+            def #{singular}_#{primary_key}                 # def message_id
+              self.#{role_id} if #{singular}?              #   self.entryable_id if message?
+            end                                            # end
+          RUBY
+        end
+      end
+
+      def define_delegated_type_methods_with_blocks(role, types, role_type, role_id, primary_key)
+        role_class = :"#{role}_class"
+
+        define_method "#{role}_class" do
+          public_send(role_type).constantize
+        end
+
+        define_method "#{role}_name" do
+          public_send(role_class).model_name.singular.inquiry
+        end
+
+        define_method "build_#{role}" do |*params|
+          public_send("#{role}=", public_send(role_class).new(*params))
+        end
+
+        types.each do |type|
+          singular = type.tableize.tr("/", "_").singularize
+          query    = "#{singular}?"
+
+          define_method query do
+            public_send(role_type) == type
           end
 
-          define_method "#{role}_name" do
-            public_send(role_class).model_name.singular.inquiry
+          define_method singular do
+            public_send(role) if public_send(query)
           end
 
-          define_method "build_#{role}" do |*params|
-            public_send("#{role}=", public_send(role_class).new(*params))
-          end
-
-          singulars.each do |type, singular|
-            query = "#{singular}?"
-
-            define_method query do
-              public_send(role_type) == type
-            end
-
-            define_method singular do
-              public_send(role) if public_send(query)
-            end
-
-            define_method "#{singular}_#{primary_key}" do
-              public_send(role_id) if public_send(query)
-            end
+          define_method "#{singular}_#{primary_key}" do
+            public_send(role_id) if public_send(query)
           end
         end
       end
