@@ -1173,7 +1173,7 @@ class EachTest < ActiveRecord::TestCase
 
     descending = []
     assert_queries_match(/WHERE \(?#{columns} < /) do
-      Cpk::Book.find_each(batch_size: 1, order: :desc) { |book| descending << book }
+      Cpk::Book.find_each(batch_size: 1, order: [:desc, :desc]) { |book| descending << book }
     end
     assert_equal [third, second, first], descending
   end
