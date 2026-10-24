@@ -284,35 +284,62 @@ module ActiveRecord
           types.map(&:to_s)
         end
 
-        define_method "#{role}_class" do
-          public_send(role_type).constantize
-        end
-
-        define_method "#{role}_name" do
-          public_send(role_class).model_name.singular.inquiry
-        end
-
-        define_method "build_#{role}" do |*params|
-          public_send("#{role}=", public_send(role_class).new(*params))
-        end
-
-        types.each do |type|
+        singulars = types.to_h do |type|
           scope_name = type.tableize.tr("/", "_")
-          singular   = scope_name.singularize
-          query      = "#{singular}?"
-
           scope scope_name, -> { where(role_type => type) }
+          [type, scope_name.singularize]
+        end
 
-          define_method query do
-            public_send(role_type) == type
+        method_names = ["#{role}_class", "#{role}_name", "build_#{role}"] +
+          singulars.values.flat_map { |singular| ["#{singular}?", singular, "#{singular}_#{primary_key}"] }
+        called_names = [role, role_type, role_id].map(&:to_s)
+
+        # Methods written as source call the attributes and the association
+        # directly and compare with the type as a literal, which is faster than
+        # public_send in a block, especially with YJIT and ZJIT. Names that can't
+        # be written as source get the block.
+        if method_names.all? { |name| ActiveModel::AttributeMethods::NAME_COMPILABLE_REGEXP.match?(name) } &&
+            called_names.all? { |name| ActiveModel::AttributeMethods::CALL_COMPILABLE_REGEXP.match?(name) }
+          ActiveSupport::CodeGenerator.batch(self, __FILE__, __LINE__) do |code_generator|
+            code_generator.class_eval do |batch|
+              batch << "def #{role}_class; self.#{role_type}.constantize; end"
+              batch << "def #{role}_name; #{role_class}.model_name.singular.inquiry; end"
+              batch << "def build_#{role}(*params); public_send(:#{role}=, #{role_class}.new(*params)); end"
+
+              singulars.each do |type, singular|
+                batch << "def #{singular}?; self.#{role_type} == #{type.inspect}; end"
+                batch << "def #{singular}; self.#{role} if #{singular}?; end"
+                batch << "def #{singular}_#{primary_key}; self.#{role_id} if #{singular}?; end"
+              end
+            end
+          end
+        else
+          define_method "#{role}_class" do
+            public_send(role_type).constantize
           end
 
-          define_method singular do
-            public_send(role) if public_send(query)
+          define_method "#{role}_name" do
+            public_send(role_class).model_name.singular.inquiry
           end
 
-          define_method "#{singular}_#{primary_key}" do
-            public_send(role_id) if public_send(query)
+          define_method "build_#{role}" do |*params|
+            public_send("#{role}=", public_send(role_class).new(*params))
+          end
+
+          singulars.each do |type, singular|
+            query = "#{singular}?"
+
+            define_method query do
+              public_send(role_type) == type
+            end
+
+            define_method singular do
+              public_send(role) if public_send(query)
+            end
+
+            define_method "#{singular}_#{primary_key}" do
+              public_send(role_id) if public_send(query)
+            end
           end
         end
       end

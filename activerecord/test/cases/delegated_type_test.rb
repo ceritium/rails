@@ -78,6 +78,21 @@ class DelegatedTypeTest < ActiveRecord::TestCase
     assert_not @entry_with_comment.post?
   end
 
+  test "delegated type methods with a foreign_type that isn't a method name" do
+    klass = Class.new(ActiveRecord::Base) do
+      def self.name; "EntryWithOddForeignType"; end
+      self.table_name = "entries"
+      attribute :"entryable kind", :string
+      delegated_type :entryable, types: %w[ Message Comment ], foreign_type: :"entryable kind"
+    end
+
+    entry = klass.new("entryable kind" => "Message")
+    assert_predicate entry, :message?
+    assert_not entry.comment?
+    assert_equal Message, entry.entryable_class
+    assert_equal "message", entry.entryable_name
+  end
+
   test "scope" do
     assert_predicate Entry.messages.first, :message?
     assert_predicate Entry.comments.first, :comment?
