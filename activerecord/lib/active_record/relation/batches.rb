@@ -350,6 +350,10 @@ module ActiveRecord
       end
 
       def batch_condition(relation, cursor, values, operators)
+        if cursor.size > 1 && row_value_comparison?(operators)
+          return relation.where(row_value_condition(cursor, values, operators.last))
+        end
+
         cursor_positions = cursor.zip(Array(values), operators)
 
         first_clause_column, first_clause_value, operator = cursor_positions.pop
@@ -362,6 +366,24 @@ module ActiveRecord
         end
 
         relation.where(where_clause)
+      end
+
+      # When every cursor column goes the same way, <tt>(a, b) > (x, y)</tt> means
+      # <tt>a > x OR (a = x AND b > y)</tt>, and the database can range over an
+      # index on <tt>(a, b)</tt> instead of filtering the rows before the cursor,
+      # which every batch would otherwise read again.
+      def row_value_comparison?(operators)
+        same_direction = operators.all? { |operator| operator == :gt || operator == :gteq } ||
+          operators.all? { |operator| operator == :lt || operator == :lteq }
+        same_direction && model.with_connection(&:supports_row_value_comparison?)
+      end
+
+      def row_value_condition(cursor, values, operator)
+        attributes = cursor.map { |column_name| table[column_name] }
+        binds = attributes.zip(Array(values)).map do |attribute, value|
+          predicate_builder.build_bind_attribute(attribute, value)
+        end
+        Arel::Nodes::Grouping.new(attributes).public_send(operator, Arel::Nodes::Grouping.new(binds))
       end
 
       def build_batch_orders(cursor, order)

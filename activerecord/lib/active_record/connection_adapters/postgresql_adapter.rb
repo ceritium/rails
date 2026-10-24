@@ -337,6 +337,10 @@ module ActiveRecord
         database_version >= 15_00_00 # >= 15.0
       end
 
+      def supports_row_value_comparison?
+        true
+      end
+
       if PG::Connection.method_defined?(:close_prepared) # pg 1.6.0 & libpq 17
         def supports_close_prepared? # :nodoc:
           database_version >= 17_00_00
