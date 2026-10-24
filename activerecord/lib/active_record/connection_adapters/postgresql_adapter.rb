@@ -341,6 +341,12 @@ module ActiveRecord
         true
       end
 
+      # Before 18, PostgreSQL scans from the first value of an IN list on the
+      # first column instead of from the row value; the repeated bound fixes it.
+      def row_value_comparison_needs_leading_bound? # :nodoc:
+        true
+      end
+
       if PG::Connection.method_defined?(:close_prepared) # pg 1.6.0 & libpq 17
         def supports_close_prepared? # :nodoc:
           database_version >= 17_00_00

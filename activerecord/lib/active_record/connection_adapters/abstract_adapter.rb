@@ -713,6 +713,12 @@ module ActiveRecord
         false
       end
 
+      # Whether row value comparisons do better with the bound on their first
+      # column repeated: <tt>a >= x AND (a, b) > (x, y)</tt>.
+      def row_value_comparison_needs_leading_bound? # :nodoc:
+        false
+      end
+
       def return_value_after_insert?(column) # :nodoc:
         column.auto_populated_on_insert?
       end
