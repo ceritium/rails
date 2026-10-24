@@ -373,9 +373,10 @@ module ActiveRecord
       # index on <tt>(a, b)</tt> instead of filtering the rows before the cursor,
       # which every batch would otherwise read again.
       def row_value_comparison?(operators)
-        same_direction = operators.all? { |operator| operator == :gt || operator == :gteq } ||
+        return false unless model.with_connection(&:supports_row_value_comparison?)
+      
+        operators.all? { |operator| operator == :gt || operator == :gteq } ||
           operators.all? { |operator| operator == :lt || operator == :lteq }
-        same_direction && model.with_connection(&:supports_row_value_comparison?)
       end
 
       def row_value_condition(cursor, values, operator)
