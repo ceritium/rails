@@ -1137,4 +1137,100 @@ class EachTest < ActiveRecord::TestCase
     relation = Cpk::Book.where("author_id >= ? AND id < ?", author_id, id).in_batches(of: 1, order: [:asc, :desc]).first
     assert_equal book2, relation.first
   end
+
+  test ".find_each over several columns compares row values where the adapter supports them" do
+    Cpk::Book.insert_all!([
+      { author_id: 1, id: 1 },
+      { author_id: 1, id: 2 },
+      { author_id: 2, id: 1 }
+    ])
+    books = Cpk::Book.order(:author_id, :id).to_a
+    author_id = Regexp.escape(quote_table_name("cpk_books.author_id"))
+    columns = Regexp.escape("(#{quote_table_name("cpk_books.author_id")}, #{quote_table_name("cpk_books.id")})")
+    condition = Cpk::Book.with_connection(&:supports_row_value_comparison?) ? /WHERE \(?(#{author_id} >= \S+ AND )?#{columns} > / : / OR /
+
+    walked = []
+    assert_queries_match(condition, count: books.size) do
+      Cpk::Book.find_each(batch_size: 1) { |book| walked << book }
+    end
+    assert_equal books, walked
+  end
+
+  test ".in_batches over several columns compares row values from the start option and in descending order" do
+    skip unless Cpk::Book.with_connection(&:supports_row_value_comparison?)
+
+    Cpk::Book.insert_all!([
+      { author_id: 1, id: 1 },
+      { author_id: 1, id: 2 },
+      { author_id: 2, id: 1 }
+    ])
+    author_id = Regexp.escape(quote_table_name("cpk_books.author_id"))
+    columns = Regexp.escape("(#{quote_table_name("cpk_books.author_id")}, #{quote_table_name("cpk_books.id")})")
+    first, second, third = Cpk::Book.order(:author_id, :id).to_a
+
+    relation = assert_queries_match(/WHERE \(?(#{author_id} >= \S+ AND )?#{columns} >= /) do
+      Cpk::Book.in_batches(of: 1, start: second.id).first
+    end
+    assert_equal second, relation.first
+
+    descending = []
+    assert_queries_match(/WHERE \(?(#{author_id} <= \S+ AND )?#{columns} < /) do
+      Cpk::Book.find_each(batch_size: 1, order: [:desc, :desc]) { |book| descending << book }
+    end
+    assert_equal [third, second, first], descending
+  end
+
+  test ".in_batches over several columns in different directions keeps comparing column by column" do
+    Cpk::Book.insert_all!([
+      { author_id: 1, id: 1 },
+      { author_id: 1, id: 2 },
+      { author_id: 2, id: 1 }
+    ])
+    books = Cpk::Book.order(author_id: :asc, id: :desc).to_a
+
+    walked = []
+    assert_queries_match(/ OR /, count: books.size) do
+      Cpk::Book.find_each(batch_size: 1, order: [:asc, :desc]) { |book| walked << book }
+    end
+    assert_equal books, walked
+  end
+  test ".find_each over several columns within an IN list on the first one" do
+    Cpk::Book.insert_all!([
+      { author_id: 1, id: 1 },
+      { author_id: 1, id: 2 },
+      { author_id: 2, id: 1 },
+      { author_id: 3, id: 1 },
+      { author_id: 3, id: 2 }
+    ])
+    books = Cpk::Book.where(author_id: [1, 3]).order(:author_id, :id).to_a
+
+    walked = []
+    Cpk::Book.where(author_id: [1, 3]).find_each(batch_size: 1) { |book| walked << book }
+    assert_equal books, walked
+  end
+  if current_adapter?(:PostgreSQLAdapter)
+    test ".find_each over several columns repeats the first bound where the adapter needs it" do
+      Cpk::Book.insert_all!([
+        { author_id: 1, id: 1 },
+        { author_id: 1, id: 2 },
+        { author_id: 2, id: 1 }
+      ])
+      books = Cpk::Book.order(:author_id, :id).to_a
+      author_id = Regexp.escape(quote_table_name("cpk_books.author_id"))
+      columns = Regexp.escape("(#{quote_table_name("cpk_books.author_id")}, #{quote_table_name("cpk_books.id")})")
+
+      [true, false].each do |needs_leading_bound|
+        Cpk::Book.with_connection do |connection|
+          connection.stub(:row_value_comparison_needs_leading_bound?, needs_leading_bound) do
+            condition = needs_leading_bound ? /WHERE \(?#{author_id} >= \S+ AND #{columns} > / : /WHERE \(?#{columns} > /
+            walked = []
+            assert_queries_match(condition, count: books.size) do
+              Cpk::Book.find_each(batch_size: 1) { |book| walked << book }
+            end
+            assert_equal books, walked
+          end
+        end
+      end
+    end
+  end
 end

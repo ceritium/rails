@@ -350,6 +350,13 @@ module ActiveRecord
       end
 
       def batch_condition(relation, cursor, values, operators)
+        # (a, b) > (x, y) and a > x OR (a = x AND b > y) select the same rows, but
+        # PostgreSQL and SQLite start reading an index on (a, b) at (x, y) only for
+        # the first: for the second they read it from the start and filter.
+        if cursor.size > 1 && row_value_comparison?(operators)
+          return relation.where(row_value_condition(cursor, values, operators.last))
+        end
+
         cursor_positions = cursor.zip(Array(values), operators)
 
         first_clause_column, first_clause_value, operator = cursor_positions.pop
@@ -362,6 +369,34 @@ module ActiveRecord
         end
 
         relation.where(where_clause)
+      end
+
+      # The adapter has to compare row values, and a single comparison needs
+      # every column going the same way.
+      def row_value_comparison?(operators)
+        return false unless model.with_connection(&:supports_row_value_comparison?)
+
+        operators.all? { |operator| operator == :gt || operator == :gteq } ||
+          operators.all? { |operator| operator == :lt || operator == :lteq }
+      end
+
+      def row_value_condition(cursor, values, operator)
+        attributes = cursor.map { |column_name| table[column_name] }
+        binds = attributes.zip(Array(values)).map do |attribute, value|
+          predicate_builder.build_bind_attribute(attribute, value)
+        end
+        condition = Arel::Nodes::Grouping.new(attributes).public_send(operator, Arel::Nodes::Grouping.new(binds))
+
+        # Repeating the bound on the first column, a >= x AND (a, b) > (x, y),
+        # lets PostgreSQL 16 and 17 combine the comparison with an IN list on that
+        # column instead of scanning from the list's first value.
+        if model.with_connection(&:row_value_comparison_needs_leading_bound?)
+          leading_operator = operator == :gt || operator == :gteq ? :gteq : :lteq
+          leading_bind = predicate_builder.build_bind_attribute(attributes.first, Array(values).first)
+          condition = attributes.first.public_send(leading_operator, leading_bind).and(condition)
+        end
+
+        condition
       end
 
       def build_batch_orders(cursor, order)
