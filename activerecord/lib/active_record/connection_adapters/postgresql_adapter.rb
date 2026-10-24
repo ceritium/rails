@@ -342,9 +342,11 @@ module ActiveRecord
       end
 
       # Before 18, PostgreSQL scans from the first value of an IN list on the
-      # first column instead of from the row value; the repeated bound fixes it.
+      # first column instead of from the row value, and the repeated bound fixes
+      # it. From 18 the IN list works, and the repeated bound makes ranges stop by
+      # the first column only, reading on to the end of its value.
       def row_value_comparison_needs_leading_bound? # :nodoc:
-        true
+        database_version < 18_00_00 # < 18.0
       end
 
       if PG::Connection.method_defined?(:close_prepared) # pg 1.6.0 & libpq 17

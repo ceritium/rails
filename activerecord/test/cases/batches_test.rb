@@ -1208,4 +1208,29 @@ class EachTest < ActiveRecord::TestCase
     Cpk::Book.where(author_id: [1, 3]).find_each(batch_size: 1) { |book| walked << book }
     assert_equal books, walked
   end
+  if current_adapter?(:PostgreSQLAdapter)
+    test ".find_each over several columns repeats the first bound where the adapter needs it" do
+      Cpk::Book.insert_all!([
+        { author_id: 1, id: 1 },
+        { author_id: 1, id: 2 },
+        { author_id: 2, id: 1 }
+      ])
+      books = Cpk::Book.order(:author_id, :id).to_a
+      author_id = Regexp.escape(quote_table_name("cpk_books.author_id"))
+      columns = Regexp.escape("(#{quote_table_name("cpk_books.author_id")}, #{quote_table_name("cpk_books.id")})")
+
+      [true, false].each do |needs_leading_bound|
+        Cpk::Book.with_connection do |connection|
+          connection.stub(:row_value_comparison_needs_leading_bound?, needs_leading_bound) do
+            condition = needs_leading_bound ? /WHERE \(?#{author_id} >= \S+ AND #{columns} > / : /WHERE \(?#{columns} > /
+            walked = []
+            assert_queries_match(condition, count: books.size) do
+              Cpk::Book.find_each(batch_size: 1) { |book| walked << book }
+            end
+            assert_equal books, walked
+          end
+        end
+      end
+    end
+  end
 end

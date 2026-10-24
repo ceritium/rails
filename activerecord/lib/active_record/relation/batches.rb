@@ -388,8 +388,8 @@ module ActiveRecord
         condition = Arel::Nodes::Grouping.new(attributes).public_send(operator, Arel::Nodes::Grouping.new(binds))
 
         # Repeating the bound on the first column, a >= x AND (a, b) > (x, y),
-        # lets PostgreSQL before 18 combine the comparison with an IN list on
-        # that column instead of scanning from the list's first value.
+        # lets PostgreSQL 16 and 17 combine the comparison with an IN list on that
+        # column instead of scanning from the list's first value.
         if model.with_connection(&:row_value_comparison_needs_leading_bound?)
           leading_operator = operator == :gt || operator == :gteq ? :gteq : :lteq
           leading_bind = predicate_builder.build_bind_attribute(attributes.first, Array(values).first)
