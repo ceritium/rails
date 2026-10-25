@@ -278,11 +278,66 @@ module ActiveRecord
         primary_key = options[:primary_key] || "id"
         role_type = options[:foreign_type] || "#{role}_type"
         role_id   = options[:foreign_key] || "#{role}_id"
-        role_class = :"#{role}_class"
 
         define_singleton_method "#{role}_types" do
           types.map(&:to_s)
         end
+
+        types.each do |type|
+          scope type.tableize.tr("/", "_"), -> { where(role_type => type) }
+        end
+
+        # Methods written as source are faster than define_method blocks that
+        # call public_send, especially with YJIT and ZJIT. Names that can't be
+        # written as source, like a foreign_type that isn't a method name, get
+        # the blocks.
+        if [role, role_type, role_id, primary_key].all? { |name| ActiveModel::AttributeMethods::CALL_COMPILABLE_REGEXP.match?(name.to_s) }
+          define_delegated_type_methods_as_source(role, types, role_type, role_id, primary_key)
+        else
+          define_delegated_type_methods_with_blocks(role, types, role_type, role_id, primary_key)
+        end
+      end
+
+      def define_delegated_type_methods_as_source(role, types, role_type, role_id, primary_key)
+        ActiveSupport::CodeGenerator.batch(self, __FILE__, __LINE__) do |code_generator|
+          code_generator.class_eval do |batch|
+            batch << <<~RUBY
+              def #{role}_class                              # def entryable_class
+                self.#{role_type}.constantize                #   self.entryable_type.constantize
+              end                                            # end
+
+              def #{role}_name                               # def entryable_name
+                #{role}_class.model_name.singular.inquiry    #   entryable_class.model_name.singular.inquiry
+              end                                            # end
+
+              def build_#{role}(*params)                     # def build_entryable(*params)
+                self.#{role} = #{role}_class.new(*params)    #   self.entryable = entryable_class.new(*params)
+              end                                            # end
+            RUBY
+
+            types.each do |type|
+              singular = type.tableize.tr("/", "_").singularize
+
+              batch << <<~RUBY
+                def #{singular}?                             # def message?
+                  self.#{role_type} == #{type.inspect}       #   self.entryable_type == "Message"
+                end                                          # end
+
+                def #{singular}                              # def message
+                  self.#{role} if #{singular}?               #   self.entryable if message?
+                end                                          # end
+
+                def #{singular}_#{primary_key}               # def message_id
+                  self.#{role_id} if #{singular}?            #   self.entryable_id if message?
+                end                                          # end
+              RUBY
+            end
+          end
+        end
+      end
+
+      def define_delegated_type_methods_with_blocks(role, types, role_type, role_id, primary_key)
+        role_class = :"#{role}_class"
 
         define_method "#{role}_class" do
           public_send(role_type).constantize
@@ -297,11 +352,8 @@ module ActiveRecord
         end
 
         types.each do |type|
-          scope_name = type.tableize.tr("/", "_")
-          singular   = scope_name.singularize
-          query      = "#{singular}?"
-
-          scope scope_name, -> { where(role_type => type) }
+          singular = type.tableize.tr("/", "_").singularize
+          query    = "#{singular}?"
 
           define_method query do
             public_send(role_type) == type
